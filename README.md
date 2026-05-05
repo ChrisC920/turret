@@ -55,6 +55,14 @@ python src/manual_control.py   # arrow keys to nudge each axis
 
 # Branch: face-tracking
 git checkout face-tracking
+# 1) Measure mount geometry and put it in config.json:
+#    - mount.camera_height_above_pivot_m  (m)
+#    - mount.camera_forward_offset_m      (m)
+# 2) Calibrate camera focal_px:
+#    Hold a face at a known distance (e.g. 1.0 m), note bbox width in pixels,
+#    set camera.focal_px = bbox_width_px * 1.0 / 0.16 in config.json.
+# 3) Wire up the Hailo callback in src/face_source.py (see comments there).
+# 4) Run:
 python src/tracker.py
 ```
 

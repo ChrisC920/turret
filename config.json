@@ -1,0 +1,27 @@
+{
+  "pan": {"gpio": 12, "min_angle": 10, "max_angle": 170, "center": 90},
+  "tilt": {"gpio": 13, "min_angle": 10, "max_angle": 170, "center": 90},
+  "servo": {"min_us": 500, "max_us": 2500, "freq_hz": 50},
+  "camera": {
+    "width_px": 640,
+    "height_px": 480,
+    "hfov_deg": 66.0,
+    "vfov_deg": 41.0,
+    "focal_px": 500.0,
+    "_comment": "hfov/vfov for Pi camera v3 wide ~ 66x41; v2 ~ 62x48. focal_px is a placeholder — calibrate with a known face width at known distance: focal_px = bbox_width_px * distance_m / real_width_m."
+  },
+  "mount": {
+    "camera_height_above_pivot_m": 0.05,
+    "camera_forward_offset_m": 0.0,
+    "_comment": "Measure on the assembled turret. height = how far above the tilt pivot the camera lens sits; forward = how far ahead of the pivot."
+  },
+  "tracker": {
+    "real_face_width_m": 0.16,
+    "pan_p_gain": 0.6,
+    "tilt_smoothing_alpha": 0.4,
+    "max_servo_step_deg": 3.0,
+    "deadband_deg": 1.5,
+    "lost_face_hold_s": 0.5,
+    "lost_face_recenter_s": 5.0
+  }
+}
