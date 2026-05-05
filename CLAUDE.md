@@ -34,7 +34,7 @@ cat CLAUDE.md
 - Raspberry Pi 5 with AI HAT (Hailo-8 / 8L) and Pi camera (CSI)
 - 2× MG996R servos: pan on GPIO 12, tilt on GPIO 13 (hardware-PWM-capable on Pi 5)
 - External 5–6 V / ≥3 A supply for servos. **Servos NEVER powered from Pi 5V rail.** Common ground required.
-- Software: `lgpio` for PWM (NOT `pigpio` — unsupported on Pi 5), Hailo runtime via `hailo-all`, plus `hailo-rpi5-examples` for the detection pipeline.
+- Software: `rpi-hardware-pwm` (sysfs PWM on `/sys/class/pwm/pwmchip2`) for servos — NOT `lgpio`, `pigpio`, `RPi.GPIO`, or `gpiozero`. Hailo runtime via `hailo-all`, plus `hailo-rpi5-examples` for the detection pipeline. The PWM overlay must be enabled in `/boot/firmware/config.txt`: `dtoverlay=pwm-2chan,pin=12,func=4,pin2=13,func2=4`.
 
 See `hardware/wiring.md` for the wiring diagram.
 

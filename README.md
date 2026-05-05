@@ -29,13 +29,20 @@ Start on `servo-test` to confirm the hardware is wired correctly before bringing
 ## Install (on the Pi)
 
 ```bash
-sudo apt install -y python3-lgpio python3-picamera2
+# One-time: enable the hardware PWM overlay, then reboot.
+echo 'dtoverlay=pwm-2chan,pin=12,func=4,pin2=13,func2=4' | sudo tee -a /boot/firmware/config.txt
+sudo apt install -y python3-picamera2
+sudo reboot
+
+# After reboot:
 git clone https://github.com/<you>/turret.git
 cd turret
 python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+The servo code uses `rpi-hardware-pwm` (sysfs PWM, no `lgpio`/`pigpio`). Servo scripts need root to write `/sys/class/pwm/pwmchip2/export`, so prefix with `sudo` (or set up a udev rule per the rpi-hardware-pwm README).
 
 For the `face-tracking` branch you also need the Hailo runtime and the official examples:
 
@@ -50,12 +57,12 @@ git clone https://github.com/hailo-ai/hailo-rpi5-examples.git ~/hailo-rpi5-examp
 ```bash
 # Branch: servo-test
 git checkout servo-test
-python src/calibrate.py        # find mechanical limits, write config.json
-python src/manual_control.py   # arrow keys to nudge each axis
+sudo .venv/bin/python src/calibrate.py        # find mechanical limits, write config.json
+sudo .venv/bin/python src/manual_control.py   # arrow keys to nudge each axis
 
 # Branch: face-tracking
 git checkout face-tracking
-python src/tracker.py
+sudo .venv/bin/python src/tracker.py
 ```
 
 ## Develop on Mac, deploy to Pi

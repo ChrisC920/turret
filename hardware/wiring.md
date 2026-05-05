@@ -8,7 +8,24 @@
 | Tilt servo PWM (vertical) | GPIO 13 | 33 |
 | Servo GND (common) | GND | any GND pin |
 
-GPIO 12 and 13 are hardware-PWM-capable on the Pi 5. If those pins conflict with the AI HAT's pin usage on your stack, fall back to GPIO 18 / 19 and update `config.json`.
+GPIO 12 and 13 are hardware-PWM-capable on the Pi 5. If those pins conflict with the AI HAT's pin usage on your stack, fall back to GPIO 18 / 19 and update both `config.json` and the `dtoverlay` line below.
+
+## Enable the PWM overlay (one-time, on the Pi)
+
+The code uses `rpi-hardware-pwm` which talks to `/sys/class/pwm/pwmchip2`. That sysfs interface is only exposed once you enable the PWM device-tree overlay. Edit `/boot/firmware/config.txt` and add:
+
+```
+dtoverlay=pwm-2chan,pin=12,func=4,pin2=13,func2=4
+```
+
+Then `sudo reboot`. Verify after reboot:
+
+```bash
+ls /sys/class/pwm/pwmchip2/
+# should list export, npwm, etc.
+```
+
+If you're using GPIO 18/19 instead, the line is `dtoverlay=pwm-2chan,pin=18,func=2,pin2=19,func2=2`.
 
 ## Power — read this before plugging in
 
