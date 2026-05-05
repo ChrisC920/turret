@@ -1,8 +1,18 @@
-"""MG996R servo control via lgpio hardware PWM on Raspberry Pi 5.
+"""MG996R servo control via sysfs hardware PWM on Raspberry Pi 5.
+
+Uses the `rpi-hardware-pwm` package, which talks directly to
+/sys/class/pwm/pwmchip2 — no lgpio, no pigpio. Requires the PWM
+overlay to be enabled on the Pi:
+
+    /boot/firmware/config.txt:
+        dtoverlay=pwm-2chan,pin=12,func=4,pin2=13,func2=4
+
+then reboot. After that, GPIO 12 → PWM channel 0 and GPIO 13 →
+channel 1, both on chip 2.
 
 The Servo class is split into a pure-python math layer (angle_to_duty,
-clamp_angle, plan_steps) and a thin lgpio I/O layer so the math is
-testable on a Mac without lgpio installed.
+clamp_angle, plan_steps) and a thin I/O layer so the math is testable
+on a Mac without rpi-hardware-pwm installed.
 """
 
 from __future__ import annotations
@@ -10,6 +20,12 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from typing import Iterator, Optional
+
+
+# On Pi 5 the GPIO PWM lives on pwmchip2.
+PWM_CHIP = 2
+# Maps BCM GPIO pin → rpi-hardware-pwm channel index on PWM_CHIP.
+GPIO_TO_PWM_CHANNEL = {12: 0, 18: 0, 13: 1, 19: 1}
 
 
 @dataclass(frozen=True)
@@ -40,6 +56,15 @@ def angle_to_pulse_us(spec: ServoSpec, angle: float) -> float:
 def angle_to_duty_pct(spec: ServoSpec, angle: float) -> float:
     period_us = 1_000_000.0 / spec.freq_hz
     return angle_to_pulse_us(spec, angle) / period_us * 100.0
+
+
+def gpio_to_pwm_channel(gpio: int) -> int:
+    if gpio not in GPIO_TO_PWM_CHANNEL:
+        raise ValueError(
+            f"GPIO {gpio} is not a hardware-PWM pin on Pi 5. "
+            f"Use one of: {sorted(GPIO_TO_PWM_CHANNEL)}."
+        )
+    return GPIO_TO_PWM_CHANNEL[gpio]
 
 
 def plan_steps(
@@ -75,7 +100,7 @@ def plan_steps(
 
 
 class Servo:
-    """Hardware-PWM servo on a single GPIO via lgpio.
+    """Hardware-PWM servo on a single GPIO via rpi-hardware-pwm.
 
     Usage:
         with Servo(ServoSpec(gpio=12)) as s:
@@ -83,27 +108,30 @@ class Servo:
             s.stop()
     """
 
-    def __init__(self, spec: ServoSpec, chip: int = 0):
+    def __init__(self, spec: ServoSpec, chip: int = PWM_CHIP):
         self.spec = spec
         self.chip = chip
-        self._handle: Optional[int] = None
+        self._channel = gpio_to_pwm_channel(spec.gpio)
+        self._pwm = None
         self._current_angle: float = (spec.min_angle + spec.max_angle) / 2.0
 
     def __enter__(self) -> "Servo":
-        import lgpio  # imported lazily so tests can run without lgpio
+        from rpi_hardware_pwm import HardwarePWM  # imported lazily
 
-        self._lgpio = lgpio
-        self._handle = lgpio.gpiochip_open(self.chip)
-        self.set_angle(self._current_angle)
+        self._pwm = HardwarePWM(
+            pwm_channel=self._channel,
+            hz=self.spec.freq_hz,
+            chip=self.chip,
+        )
+        # Start with the center duty so the servo doesn't snap on init.
+        self._pwm.start(angle_to_duty_pct(self.spec, self._current_angle))
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
         try:
             self.stop()
         finally:
-            if self._handle is not None:
-                self._lgpio.gpiochip_close(self._handle)
-                self._handle = None
+            self._pwm = None
 
     @property
     def current_angle(self) -> float:
@@ -111,11 +139,10 @@ class Servo:
 
     def set_angle(self, angle: float) -> None:
         """Snap to angle (no smoothing). Most callers want move_to."""
-        if self._handle is None:
+        if self._pwm is None:
             raise RuntimeError("Servo not opened (use 'with Servo(...)')")
         a = clamp_angle(self.spec, angle)
-        duty = angle_to_duty_pct(self.spec, a)
-        self._lgpio.tx_pwm(self._handle, self.spec.gpio, self.spec.freq_hz, duty)
+        self._pwm.change_duty_cycle(angle_to_duty_pct(self.spec, a))
         self._current_angle = a
 
     def move_to(self, angle: float, speed_deg_per_s: float = 90.0, tick_hz: float = 50.0) -> None:
@@ -124,7 +151,7 @@ class Servo:
         Blocks for the duration of the move. MG996Rs jerk hard if you snap
         them; this loop interpolates so the motion looks smooth.
         """
-        if self._handle is None:
+        if self._pwm is None:
             raise RuntimeError("Servo not opened")
         target = clamp_angle(self.spec, angle)
         period = 1.0 / tick_hz
@@ -134,6 +161,9 @@ class Servo:
 
     def stop(self) -> None:
         """Release the PWM line so the servo isn't held against load."""
-        if self._handle is None:
+        if self._pwm is None:
             return
-        self._lgpio.tx_pwm(self._handle, self.spec.gpio, self.spec.freq_hz, 0)
+        try:
+            self._pwm.stop()
+        except Exception:
+            pass
