@@ -17,7 +17,7 @@ Live face tracking. Pi camera → Hailo NPU face detection → pan/tilt servo co
 
 ```
 src/
-  servo.py        # lgpio PWM wrapper with smooth move_to()
+  servo.py        # rpi-hardware-pwm sysfs wrapper with smooth move_to()
   geometry.py     # pure-python: pixel→angle, bbox→distance, tilt geometry
   face_source.py  # Hailo detection thread → list[Detection]   ← STUB, you must wire this up
   tracker.py      # main control loop
@@ -66,8 +66,11 @@ If the user hasn't yet run `src/calibrate.py` from the servo-test branch, recomm
 ## Run order on a freshly-cloned repo
 
 ```bash
-# On the Pi:
-sudo apt install -y hailo-all python3-lgpio python3-picamera2
+# 0) One-time: enable PWM overlay in /boot/firmware/config.txt and reboot.
+echo 'dtoverlay=pwm-2chan,pin=12,func=4,pin2=13,func2=4' | sudo tee -a /boot/firmware/config.txt
+sudo apt install -y hailo-all python3-picamera2
+sudo reboot
+# After reboot:
 git clone https://github.com/ChrisC920/turret.git
 cd turret
 python3 -m venv --system-site-packages .venv
@@ -75,14 +78,16 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 git checkout servo-test
-python src/calibrate.py            # writes config.json with mechanical limits
-python src/manual_control.py       # confirm both servos move smoothly
+sudo .venv/bin/python src/calibrate.py        # writes config.json
+sudo .venv/bin/python src/manual_control.py   # confirm smooth motion
 
 git checkout face-tracking
 # Edit config.json: set mount.* and camera.focal_px from measurements.
 # Edit src/face_source.py: replace _run_pipeline stub with a Hailo pipeline.
-python src/tracker.py
+sudo .venv/bin/python src/tracker.py
 ```
+
+`sudo` is needed because `rpi-hardware-pwm` writes to `/sys/class/pwm/pwmchip2/export` which is root-owned by default. Add a udev rule (see the rpi-hardware-pwm README) if you want to drop sudo.
 
 ## Tuning playbook
 
@@ -100,7 +105,9 @@ python src/tracker.py
 
 - **Servos move but no detection**: print `len(faces.latest())` in the control loop. If always 0, the Hailo pipeline isn't publishing; debug `face_source.py` first.
 - **Pi browns out / reboots when servos move**: the servos are powered from the Pi. Stop everything and fix the wiring. See `hardware/wiring.md`.
-- **`lgpio.error: 'GPIO busy'`**: another process is holding the pin (commonly a previous tracker that didn't exit cleanly). `sudo lsof | grep gpiochip` to find it, or reboot.
+- **`FileNotFoundError: /sys/class/pwm/pwmchip2`**: the PWM overlay isn't enabled. Add `dtoverlay=pwm-2chan,pin=12,func=4,pin2=13,func2=4` to `/boot/firmware/config.txt` and reboot.
+- **`PermissionError` on `/sys/class/pwm/...`**: run with `sudo` or add a udev rule.
+- **PWM channel `Device or resource busy`**: previous run didn't release. `sudo bash -c 'echo 0 > /sys/class/pwm/pwmchip2/unexport; echo 1 > /sys/class/pwm/pwmchip2/unexport'`, or reboot.
 - **Tilt always points up/down**: check sign of `mount.camera_height_above_pivot_m`. Positive = camera ABOVE the pivot.
 - **Tracker tracks the wrong face in a crowd**: `pick_target` in `tracker.py` selects the largest bounding box. Change to "closest to current aim" if needed.
 
@@ -108,6 +115,6 @@ python src/tracker.py
 
 - Don't power servos from the Pi. Don't suggest configurations that do.
 - The camera is FIXED level. Do not write tilt control that treats vertical pixel offset as direct error feedback — it isn't. Tilt must remain geometric.
-- `lgpio` is required (Pi 5 doesn't support `pigpio`). Don't replace it.
+- Use `rpi-hardware-pwm` only. Do NOT switch to `lgpio`, `pigpio`, `RPi.GPIO`, or `gpiozero` — the user has explicitly ruled those out.
 - Pure-math functions stay in `geometry.py` / `servo.py` so unit tests run on the dev machine. Don't move math into the I/O layers.
 - Run `pytest tests/` after any edit to math or control logic.

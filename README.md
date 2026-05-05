@@ -29,13 +29,15 @@ Start on `servo-test` to confirm the hardware is wired correctly before bringing
 ## Install (on the Pi)
 
 ```bash
-sudo apt install -y python3-lgpio python3-picamera2
+sudo apt install -y python3-picamera2
 git clone https://github.com/<you>/turret.git
 cd turret
 python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+The servo code uses `rpi-hardware-pwm` (sysfs PWM, no `lgpio`/`pigpio`). You must enable the PWM overlay once: add `dtoverlay=pwm-2chan,pin=12,func=4,pin2=13,func2=4` to `/boot/firmware/config.txt` and reboot. See [`hardware/wiring.md`](hardware/wiring.md). `rpi-hardware-pwm` typically needs root or a udev rule to write to `/sys/class/pwm/pwmchip2`; the simplest path is `sudo python src/...` for the servo scripts.
 
 For the `face-tracking` branch you also need the Hailo runtime and the official examples:
 
